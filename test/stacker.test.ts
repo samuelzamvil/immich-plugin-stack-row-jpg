@@ -4,6 +4,7 @@ import {
   type AssetLike,
   findSiblings,
   orderForStack,
+  pairStem,
   parseExtensionList,
   resolveConfig,
   splitFileName,
@@ -220,5 +221,61 @@ describe('stackAsset', () => {
     const raw = asset('X.ARW');
     const { request } = fakeServer([jpg, raw], 400);
     assert.throws(() => stackAsset(jpg, config, request), /POST \/stacks failed with 400/);
+  });
+});
+
+describe('Google Camera (Pixel) RAW + JPEG names', () => {
+  const pixel = { exifInfo: { make: 'Google', model: 'Pixel 6 Pro' } };
+  const cover = 'PXL_20250730_025841098.RAW-01.COVER.jpg';
+  const original = 'PXL_20250730_025841098.RAW-02.ORIGINAL.dng';
+
+  it('reduces both names to the shared stem', () => {
+    assert.equal(pairStem('PXL_20250730_025841098.RAW-01.COVER'), 'PXL_20250730_025841098');
+    assert.equal(pairStem('PXL_20250730_025841098.RAW-02.ORIGINAL'), 'PXL_20250730_025841098');
+    assert.equal(pairStem('PXL_20250730_025841098.NIGHT.RAW-01.COVER'), 'PXL_20250730_025841098.NIGHT');
+    assert.equal(pairStem('PXL_20250730_025841098.RAW-01.MP.COVER'), 'PXL_20250730_025841098');
+    assert.equal(pairStem('pxl_1.raw-02.original'), 'pxl_1');
+  });
+
+  it('leaves other names alone', () => {
+    assert.equal(pairStem('DSC01234'), 'DSC01234');
+    assert.equal(pairStem('holiday.2024.final'), 'holiday.2024.final');
+    assert.equal(pairStem('PXL_20250730_025841098.PORTRAIT-01.COVER'), 'PXL_20250730_025841098.PORTRAIT-01.COVER');
+    assert.equal(pairStem('PXL_20250730_025841098.MP'), 'PXL_20250730_025841098.MP');
+    assert.equal(pairStem('.RAW-01.COVER'), '.RAW-01.COVER');
+  });
+
+  it('stacks the pair with the COVER jpg first, whichever file is processed', () => {
+    for (const first of [cover, original]) {
+      const jpg = asset(cover, pixel);
+      const dng = asset(original, pixel);
+      const { request, calls } = fakeServer([jpg, dng]);
+      const result = stackAsset(first === cover ? jpg : dng, config, request);
+      assert.equal(result.action, 'stacked');
+      assert.equal(calls[0].body.filter.originalFileName.startsWith, 'PXL_20250730_025841098.');
+      assert.deepEqual(calls[1].body.assetIds, [jpg.id, dng.id]);
+    }
+  });
+
+  it('does not pair different shots, or a RAW pair with a plain photo of another shot', () => {
+    const jpg = asset(cover, pixel);
+    const other = asset('PXL_20250730_025841999.RAW-02.ORIGINAL.dng', pixel);
+    const { request, calls } = fakeServer([jpg, other]);
+    assert.equal(stackAsset(jpg, config, request).action, 'skipped');
+    assert.equal(calls.length, 1);
+  });
+
+  it('keeps night and normal shots apart', () => {
+    const jpg = asset('PXL_20250730_025841098.NIGHT.RAW-01.COVER.jpg', pixel);
+    const dng = asset(original, pixel);
+    assert.deepEqual(findSiblings(jpg, [dng], config), []);
+    const nightDng = asset('PXL_20250730_025841098.NIGHT.RAW-02.ORIGINAL.dng', pixel);
+    assert.deepEqual(findSiblings(jpg, [dng, nightDng], config), [nightDng]);
+  });
+
+  it('never pairs two JPEGs (portrait cover + original)', () => {
+    const a = asset('PXL_20250730_025841098.PORTRAIT-01.COVER.jpg', pixel);
+    const b = asset('PXL_20250730_025841098.PORTRAIT-02.ORIGINAL.jpg', pixel);
+    assert.deepEqual(findSiblings(a, [b], config), []);
   });
 });

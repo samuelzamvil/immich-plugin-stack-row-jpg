@@ -21,10 +21,55 @@ Built for Immich **v3.3.x** (tested against the v3.3.5 plugin API).
   them into one stack.
 - Files that are already in a stack, in the trash, videos, or other extensions are left alone.
 
+Google Camera (Pixel) RAW + JPEG shots are paired too, even though their names differ before the
+extension: `PXL_20250730_025841098.RAW-01.COVER.jpg` + `PXL_20250730_025841098.RAW-02.ORIGINAL.dng`.
+The `.RAW-NN.COVER` / `.RAW-NN.ORIGINAL` tail (optionally with `.MP`) is ignored when comparing stems.
+
 > **Why an API key?** Immich's plugin host functions (v3.3) can manage albums and tags but not stacks
 > or asset search. The plugin therefore calls Immich's own REST API (`/api/search/metadata` and
 > `/api/stacks`) through the `httpRequest` host function, authenticated with an API key you put in
 > the workflow step. The key is stored in the Immich database with the workflow config.
+
+
+## Install from a release with Docker Compose
+
+Every new `version` in `manifest.json` that lands on `main` is built by GitHub Actions and published
+as a release with a `raw-jpg-stacker.zip` asset. This one-shot service downloads the latest release
+into `./plugins` when the plugin folder is missing, and does nothing when it is already there:
+
+```yaml
+services:
+  stacker-plugin:
+    image: alpine:3
+    restart: "no"
+    volumes:
+      - ./plugins:/plugins
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -f /plugins/raw-jpg-stacker/manifest.json ]; then
+          echo "raw-jpg-stacker already installed"
+          exit 0
+        fi
+        wget -O /tmp/raw-jpg-stacker.zip https://github.com/samuelzamvil/immich-plugin-stack-row-jpg/releases/latest/download/raw-jpg-stacker.zip
+        unzip -o /tmp/raw-jpg-stacker.zip -d /plugins
+        echo "raw-jpg-stacker installed"
+
+  immich-server:
+    # ...your existing settings...
+    environment:
+      IMMICH_ALLOW_EXTERNAL_PLUGINS: "true"
+      IMMICH_PLUGINS_INSTALL_FOLDER: /plugins
+    volumes:
+      - ./plugins:/plugins:ro
+    depends_on:
+      stacker-plugin:
+        condition: service_completed_successfully
+```
+
+To upgrade, delete `./plugins/raw-jpg-stacker` and run `docker compose up -d` again.
 
 ## Install
 
@@ -59,8 +104,8 @@ services:
 (Or put the two variables in your `.env`.) Then `docker compose up -d`. The server log should show:
 
 ```
-Imported plugin raw-jpg-stacker@0.1.0 (1 methods) from /plugins/raw-jpg-stacker
-Loaded plugin with host functions: raw-jpg-stacker@0.1.0/worker
+Imported plugin raw-jpg-stacker@0.2.0 (1 methods) from /plugins/raw-jpg-stacker
+Loaded plugin with host functions: raw-jpg-stacker@0.2.0/worker
 ```
 
 Plugins are imported only at startup, so restart the server after installing or upgrading.
@@ -149,7 +194,7 @@ version, and restart.
   the manifest's `allowedHosts` (see above).
 - **Plugin not updated after replacing the wasm:** Immich re-imports a plugin only when
   `manifest.json` changes. Bump `version` in the manifest.
-- **A pair wasn't stacked:** make sure both files have the same stem (`DSC01234`) and similar
+- **A pair wasn't stacked:** make sure both files have the same stem (`DSC01234`, or the Pixel `.RAW-01.COVER` / `.RAW-02.ORIGINAL` pattern) and similar
   capture times. Cameras with a separate RAW/JPEG time offset may need a larger tolerance.
 
 ## Development
