@@ -30,6 +30,47 @@ The `.RAW-NN.COVER` / `.RAW-NN.ORIGINAL` tail (optionally with `.MP`) is ignored
 > `/api/stacks`) through the `httpRequest` host function, authenticated with an API key you put in
 > the workflow step. The key is stored in the Immich database with the workflow config.
 
+
+## Install from a release with Docker Compose
+
+Every new `version` in `manifest.json` that lands on `main` is built by GitHub Actions and published
+as a release with a `raw-jpg-stacker.zip` asset. This one-shot service downloads the latest release
+into `./plugins` when the plugin folder is missing, and does nothing when it is already there:
+
+```yaml
+services:
+  stacker-plugin:
+    image: alpine:3
+    restart: "no"
+    volumes:
+      - ./plugins:/plugins
+    command:
+      - sh
+      - -c
+      - |
+        set -e
+        if [ -f /plugins/raw-jpg-stacker/manifest.json ]; then
+          echo "raw-jpg-stacker already installed"
+          exit 0
+        fi
+        wget -O /tmp/raw-jpg-stacker.zip https://github.com/samuelzamvil/immich-plugin-stack-row-jpg/releases/latest/download/raw-jpg-stacker.zip
+        unzip -o /tmp/raw-jpg-stacker.zip -d /plugins
+        echo "raw-jpg-stacker installed"
+
+  immich-server:
+    # ...your existing settings...
+    environment:
+      IMMICH_ALLOW_EXTERNAL_PLUGINS: "true"
+      IMMICH_PLUGINS_INSTALL_FOLDER: /plugins
+    volumes:
+      - ./plugins:/plugins:ro
+    depends_on:
+      stacker-plugin:
+        condition: service_completed_successfully
+```
+
+To upgrade, delete `./plugins/raw-jpg-stacker` and run `docker compose up -d` again.
+
 ## Install
 
 ### 1. Copy the plugin to the server

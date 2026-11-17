@@ -1,0 +1,74 @@
+name: Build and release
+
+# Pull requests: test and build only.
+# Push to main: test, build, and publish a release named after the manifest version (v0.2.0, ...)
+# if that release does not exist yet. Bump "version" in manifest.json to publish a new one.
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Same toolchain as mise.toml
+  EXTISM_JS_VERSION: v1.7.0
+  BINARYEN_VERSION: version_124
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install extism-js and binaryen
+        run: |
+          mkdir -p "$RUNNER_TEMP/tools"
+          cd "$RUNNER_TEMP/tools"
+          curl -fsSL -o extism-js.gz "https://github.com/extism/js-pdk/releases/download/${EXTISM_JS_VERSION}/extism-js-x86_64-linux-${EXTISM_JS_VERSION}.gz"
+          gunzip extism-js.gz
+          chmod +x extism-js
+          curl -fsSL -o binaryen.tgz "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-x86_64-linux.tar.gz"
+          tar xzf binaryen.tgz
+          echo "$RUNNER_TEMP/tools" >> "$GITHUB_PATH"
+          echo "$RUNNER_TEMP/tools/binaryen-${BINARYEN_VERSION}/bin" >> "$GITHUB_PATH"
+
+      - run: npm install
+
+      - run: npm run typecheck
+
+      - run: npm test
+
+      - name: Build plugin folder
+        run: npm run package
+
+      - name: Zip plugin folder
+        run: |
+          cd release
+          zip -r ../raw-jpg-stacker.zip raw-jpg-stacker
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: raw-jpg-stacker
+          path: raw-jpg-stacker.zip
+
+      - name: Publish release for a new manifest version
+        if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="v$(node -p "require('./manifest.json').version")"
+          if gh release view "$version" >/dev/null 2>&1; then
+            echo "Release $version already exists, nothing to publish."
+            exit 0
+          fi
+          gh release create "$version" raw-jpg-stacker.zip \
+            --target "$GITHUB_SHA" \
+            --title "$version" \
+            --generate-notes
