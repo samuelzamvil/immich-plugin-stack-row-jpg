@@ -1,8 +1,8 @@
 {
   "name": "raw-jpg-stacker",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "title": "RAW + JPEG stacker",
-  "description": "Groups RAW files with their camera JPEG/HEIC (same file name, same capture time) into a single stack",
+  "description": "Groups RAW files with their camera JPEG/HEIC (same file name, including Google Camera RAW-01.COVER / RAW-02.ORIGINAL pairs, same capture time) into a single stack",
   "author": "maxxer",
   "wasmPath": "dist/plugin.wasm",
   "templates": [

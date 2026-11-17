@@ -105,6 +105,22 @@ export const splitFileName = (fileName: string): { stem: string; ext: string } |
   return { stem: fileName.slice(0, index), ext: fileName.slice(index + 1).toLowerCase() };
 };
 
+/**
+ * Google Camera (Pixel) writes a RAW + JPEG shot as two files whose names differ before the extension:
+ *   PXL_20250730_025841098.RAW-01.COVER.jpg
+ *   PXL_20250730_025841098.RAW-02.ORIGINAL.dng
+ * (also with a mode or motion-photo marker, e.g. "PXL_….NIGHT.RAW-01.COVER.jpg", "PXL_….RAW-01.MP.COVER.jpg").
+ * Only the ".RAW-NN.COVER" / ".RAW-NN.ORIGINAL" tail is removed, so other dotted names keep their full stem.
+ */
+const GOOGLE_CAMERA_RAW_SUFFIX = /\.RAW-\d+(?:\.MP)?\.(?:COVER|ORIGINAL)$/i;
+
+/** The part of the stem that both files of a pair share: "PXL_1.RAW-01.COVER" -> "PXL_1", "DSC01234" -> "DSC01234". */
+export const pairStem = (stem: string): string => {
+  const stripped = stem.replace(GOOGLE_CAMERA_RAW_SUFFIX, '');
+  // never reduce a name to nothing (".RAW-01.COVER.jpg")
+  return stripped.length > 0 ? stripped : stem;
+};
+
 export const getKind = (fileName: string, config: StackerConfig): FileKind | undefined => {
   const parts = splitFileName(fileName);
   if (!parts) {
@@ -139,7 +155,7 @@ const sameCamera = (a: AssetLike, b: AssetLike) => {
 const timeDifferenceSeconds = (a: AssetLike, b: AssetLike) =>
   Math.abs(new Date(a.fileCreatedAt).getTime() - new Date(b.fileCreatedAt).getTime()) / 1000;
 
-/** Should this asset be processed at all? Returns its kind and stem, or a reason to skip. */
+/** Should this asset be processed at all? Returns its kind and pair stem, or a reason to skip. */
 export const getEligibility = (
   asset: AssetLike,
   config: StackerConfig,
@@ -158,7 +174,7 @@ export const getEligibility = (
   if (!parts || !kind) {
     return { ok: false, reason: `extension not configured (${asset.originalFileName})` };
   }
-  return { ok: true, kind, stem: parts.stem };
+  return { ok: true, kind, stem: pairStem(parts.stem) };
 };
 
 /** Filter search results down to the assets that belong in the same stack as `asset`. */
